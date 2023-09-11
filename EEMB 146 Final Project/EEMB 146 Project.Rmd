@@ -1,0 +1,391 @@
+---
+title: "Palmetto Heights: The Great Palm Reading Experiment - EEMB 146 Final Project"
+author: "Navneet Rajagopal"
+date: "3/23/2023"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "~/Desktop")
+
+```
+
+```{r data and libraries, include=FALSE}
+library(psych)
+library(car)
+library(multcomp)
+library(ggplot2)
+library(bookdown)
+
+# Load and preprocess the data
+dat1<-read.csv("/users/navneet/downloads/dataset_28.csv")
+palmetto <- dat1[, !names(dat1) %in% c("treatment", "new_lvs", "canopy", "lf_long", "comments","site", "scape")]
+palmetto<-na.omit(palmetto)
+
+palmetto
+
+cor_matrix<-cor(palmetto)
+#highest correlation is between height, length, and width. That is why I will not be using them together
+
+#distributions
+par(mfrow=c(2,2))
+hist(palmetto$biomass, main="", xlab="Biomass") #not normal
+hist(palmetto$height, main="", xlab="Height") #mostly normal
+hist(palmetto$length, main="", xlab="Length") #mostly normal
+hist(palmetto$width, main="", xlab="Width") #mostly norma
+
+#normality check
+shapiro.test((palmetto$biomass)) #not normal
+shapiro.test((palmetto$height)) # not normal
+shapiro.test((palmetto$length)) #not normal
+shapiro.test((palmetto$width)) #not normal
+qqPlot(palmetto$biomass) #looks not normal
+qqPlot(palmetto$height) #looks normal
+qqPlot(palmetto$length) #looks normal
+qqPlot(palmetto$width) #looks not normal
+
+#since none of them are normal transform
+shapiro.test(log(palmetto$biomass)) #not normal
+shapiro.test(sqrt(palmetto$height)) #normal
+shapiro.test(sqrt(palmetto$length)) # normal
+shapiro.test(sqrt(palmetto$width)) # normal
+qqPlot(sqrt(palmetto$height)) # normal
+qqPlot(sqrt(palmetto$length)) # normal
+qqPlot(sqrt(palmetto$width)) # normal
+
+
+#numerics vs factor/categorical
+par(mfrow=c(2,2))
+boxplot(height ~ habitat, data=palmetto, xlab="species")
+boxplot(length ~ habitat, data=palmetto, xlab="species")
+boxplot(width ~ habitat, data=palmetto, xlab="species")
+par(mfrow=c(1,1))
+
+#all the numerica data is not normal by itself. After transformation it is normal
+#habitat will be a good categorical predictor
+#height length and weight are all correlated
+
+#I think i will run an anova on petal height ~ habitat for my "comparing means" test
+
+#goal: one way anova of height by habitat
+
+#step 1: check assumptions of linear regression:
+#independence, normal residuals, equal variances
+
+palmettoaov <- aov(sqrt(height) ~ as.factor(habitat), data=palmetto)
+par(mfrow=c(2,2))
+plot(palmettoaov) #looks normal with a constant variance
+par(mfrow=c(1,1))
+res1 <- palmettoaov$residuals
+shapiro.test(res1) #normal
+qqPlot(res1) #normal
+hist(res1) #looks normal
+
+#step 2: run the anova
+summary(palmettoaov) #habitat highly significant, as expected from EDA. The p value is really low (*10^-14) this means that habitat is a significant predictor and we can move on with the experiment
+
+#step 3: check the difference in means
+
+TukeyHSD(palmettoaov) #this gives an error when its just habitat which is why I am doing as.factor(habitat) to coerce r into thinking it is a factor
+# what this also says is that the difference between 2-1, 3-1, and 4-1 are significant. As well as 4-2. So we know 1 significantly differs from the rest of the data. 4 may also differ but not that much. 
+
+#step 4: plot it out
+
+ggplot(palmetto, aes(x = habitat, y = sqrt(height), fill = factor(habitat))) + 
+geom_bar(stat = "identity", position = "dodge")  +
+labs(x = "Habitat", y = "Mean sqrt height",fill = "Habitat", title = "Mean sqrt height by Habitat") +
+theme_minimal()
+
+```
+
+## Abstract
+This project was motivated by a love for trees, not really I just enjoy statistics. The data examined is composed of multiple categorical variables and quantitative variables. After cleaning I did a one-way ANOVA test using the categorical variable Habitat. Then I ran a linear regression to test how biomass and habitat effect the height of a tree. It was found that both Habitat and biomass and habitat have an effect on the tree height and can be used to predict the height. The results explain the effect that changes in the environment (specifically changes in biomass) have on the growth of a tree.
+
+## Introduction
+
+Palmetto is a type of palm tree that commonly grows on sandy shores, along brackish marshes, in seacoast woodlands of Southeastern United States and throughout peninsular Florida. It can tolerate a broad range of soil conditions and is often planted as a street tree. For example, the cabbage palmetto is found in the coastal plain region from North Carolina to Florida. 
+
+The climate and environmental factors from North Carolina to Florida vary and therefore can have different effects on the tree. The [United States Department of Agricaulture reports](https://www.srs.fs.usda.gov/pubs/misc/ag_654/volume_2/sabal/palmetto.htm) "The climate within the natural range of cabbage palmetto is principally subtropical to warm temperate, humid, with an average annual rainfall of 1000 to 1630 mm. (39 to 64 in) and average annual minimum and maximum temperatures from about -4° to 36° C (25° to 97° F)." This range reported in this study is quite wide and can have multiple effects on the tree. 
+
+However location is not the only thing that can effect the height of a tree. A study from the [British Ecological Society](https://besjournals.onlinelibrary.wiley.com/doi/pdf/10.1111/1365-2435.12775) found that biomass declines the larger the tree site is. So now this raises the question, what factors do impact the size of a tree and how significant are they?
+
+To do this I will be using a data set that measured the [survival, growth and biomass estimates of two dominant palmetto species of south-central Florida](https://portal.edirepository.org/nis/metadataviewer?packageid=edi.317.1). Data was obtained through three components. The first component compared growth of two palmetto species in scrubby flatwoods and flatwoods habitats. The second component studied 400 palmettos (200 of each species) in sand pine scrub and sandhill habitats on Archbold's Red Hill. The third component examined the effects of clipping and fertilizing on palmetto flowering in sand pine scrub habitat on Red Hill. The data reveal demographic trends of the two palmetto species in various habitats and experimental treatments.
+
+The goal of my exploration will be to determine what impacts the growth of a tree (specifically the height). I will be taking the habitat and seeing if that reveals anything about the demographic triends and the biomass to see if there is any relationship there. My hypothesis is that there are factors that will impact the growth of the tree. My first hypothesis is that there is a significant relationship between the habitat and the height. The second hypothesis is that there is a relationship between the hight and biomass. 
+
+![Palmetto](/users/Navneet/downloads/palmetto.jpg)
+This is a palmetto tree
+
+## Exploratory Data Analysis
+
+### The cleaning part (boring but neccessary)
+This data set pertains to two dominant palmetto species, Serenoa repens and Sabal etonia, at Archbold Biological Station in south-central Florida. The  dataset contains survival and growth data across multiple years, habitats and experimental treatments. The columns are year, plant, species, site, habitat, treatment, survival, height, length, width, green_lvs, scape, new_lvs, biomass, canopy, lf_long, comments. To clean up this data and make it better I first removed the variables I would not be using like comments, if_long, canopy, new_lvls, treatments, and if_long. The reason I removed these was that most of them were NA values and when I move on to the next step of my data, removing all NA variables, I would end up losing most of the data. I also removed site because I feel like having that and habitat is redundant since habitat is much more specific to where the environments plants are in. 
+
+To explain the variables that are left there is the year (which is when the plant was recorded), plant (the number plant that they are mesuring), species(1 and 2 for the two dominant types), habitat (where the plant is located), height (height of plant), length (length of plant), width (width of plant), green_lvs (count of green leaves), and biomass. I removed site because I felt like habitat was a better representation of what environment the plant is in. I also removed new_lvs and scape because I feel like height, width, and length are good enough predictors of how heatlhy the tree is (if it keeps growing then it is healthy in theory). 
+
+### Historgams for the Distribution 
+```{r warnings=FALSE, fig.show="hold", echo=FALSE, output=FALSE, fig.cap="historgram of the response variable (height)"}
+
+par(mfrow=c(1,1))
+hist(palmetto$height, main="", xlab="Height",col='red') #mostly normal
+```
+One of the most important things when doing statistical analysis is to have a normal response variable. So when we look at this historgam above it looks mostly normal. However, when I run a shapiro wilk test to check normality there is a p-value of 0.0003612. This is less than the accepted alpha of the test of 0.05 which gives significant evidence that the data is normally distributed. So I had to transform the data to a square root model to make it normal for the analysis.
+
+```{r warnings=FALSE, fig.show="hold", echo=FALSE, output=FALSE, fig.cap="historgram of the transformed response variable (height)"}
+par(mfrow=c(1,1))
+hist(sqrt(palmetto$height), main="", xlab="Sqrt Height", col='purple') #mostly normal
+```
+This data looks even better and more normal. The shapiro wilk test for this value is 0.304 which is well above the alpha. This gives significant evidence to say our data is normally distributed. So we will be using the square root transformed height for the future analysis. 
+
+### Boxplots for the Categoricals
+```{r warnings=FALSE, fig.show="hold", echo=FALSE, output=FALSE, fig.cap="the effect the different habitats have on height of the tree"}
+
+par(mfrow=c(1,1))
+boxplot(height ~ habitat, data=palmetto, xlab="habitat", col="orange")
+
+```
+Looking at the boxplot above, we can see that there is some level of effect that the habitat has on the height. It could be that some of these habitats have more water or nutrients, maybe even less species are present in the area which gives the Palmetto more space to grow. Each of these graphs show outliers, which does make sense the dataset does measure many trees at different time so there will be trees that are taller after being planted for a long time. However, this shouldn't make a difference in the overall analysis. Since every sight has the same thing (trees planted at various times).
+
+### Plot of the Biomass
+```{r warnings=FALSE, fig.show="hold", echo=FALSE, output=FALSE, fig.cap="sqrt height vs biomass"}
+par(mfrow=c(1,1)) #include as a fig
+plot(palmetto$biomass,sqrt(palmetto$height), xlab='biomass',ylab='sqrt height', main='Plot of the Sqrt Height of a Palmetto and the Biomass')
+```
+Plotting biomass vs sqrt height we can see that there is most certainly not a linear relationship. However, what this graph does show is the residuals. If we were to plot a line of best fit (not a linear line) we can look at the residuals (the values above and below the graph's predictions) and they look to be evenly spaced away from other points in that region. This shows that the model will have a mostly linear residual vs fitted graph. 
+
+
+```{r warnings=FALSE, fig.show="hold", echo=FALSE, output=FALSE, fig.cap="residual vs fitted"}
+par(mfrow=c(1,1))
+x<-lm(sqrt(height)~biomass, data=palmetto)
+plot(fitted(x),resid(x), main='residual vs fited plot',xlab='fitted values for biomass and sqrt height',ylab='residual values')
+abline(0,0)
+
+```
+While there are some values to the right of the graph (for the biomass), we can see that the residual values are mostly spaced out evenly among the line at 0 for graph. What this means is that the residuals are normally fitted which allows us to use biomass and green levels later in the analysis.
+
+## Statistical Methods
+
+In my study, I am interested in understanding what factors may affect the height of the palmetto. To achieve this, I plan to use two statistical methods: ANOVA and linear regression.
+
+
+#### Does height length vary by habitat?
+
+First, I will use ANOVA (analysis of variance) to determine whether there is a significant difference in palmetto height between different habitats. ANOVA is a statistical method that compares the means of three or more groups to determine if there is a significant difference between them. In my case, I will be comparing the  height of palmettos in different habitats to see if there is a significant difference.
+
+I believe that habitat may have an effect on palmetto height because different habitats can have different soil conditions, water availability, and other environmental factors that may influence the growth of the palmetto plant. Therefore, the null hypothesis in my test is that there is no effect, the plant height is not really impacted by the location. However the alternative hypothesis is that plant height is significantly determined by the location. If the ANOVA gives a p-value of 0.05 or less, then that means my alternative hypothesis is true, while the opposite is true if greater than. 
+
+#### What variables are good predictors of height?
+
+Assuming that I find a significant difference in palmetto height between different habitats, I will then use linear regression to understand which predictors have an effect on height and by how much. Linear regression is a statistical method that can be used to model the relationship between a dependent variable (in my case, palmetto height) and one or more independent variables (the predictors I am interested in).
+
+In my study, the predictor I want to test is biomass. The reason I do not want to run any other numerical predictors is because they all quanitfy tree growth to an extant and will of course be correlated. By running a linear regression, I can determine if the biomass predictor is significantly related to palmetto height and quantify the strength of these relationships. Therefore, the null hypothesis in this test is that all the predictors are the same and have no real effect on predicting the height of the plant. However, the alternative hypotheis is that at least one predictor does have a significant effect in predicting the height of the plant. If the linear regression gives a p-value of 0.05 or less, then that means my alternative hypothesis is true, while the opposite is true if greater than.
+
+
+## Results
+
+Time for the fun part, lets actually see if plant height has a relationship to the predictors. 
+
+#### Does height vary by habitat?
+After checking to make sure all my data meats the prerequistes for an anova, I ran a one way anove of habitat and the sqrt of height. The anova gave a p-value of 1.58e-14 which is very low. Since the p-value is less than 0.05 we can say that the null hypothesis for this test (that the habitat has no effect on the height) is rejected. Now I created a graph below to help visualize the difference in height based on the habitat
+
+```{r warnings=FALSE, fig.show="hold", echo=FALSE, output=FALSE, fig.cap="The Graphs for ANOVA"}
+ggplot(palmetto, aes(x = habitat, y = sqrt(height), fill = factor(habitat))) + 
+geom_bar(stat = "identity", position = "dodge")  +
+labs(x = "Habitat", y = "Mean sqrt height",fill = "Habitat", title = "Mean sqrt height by Habitat") +
+theme_minimal()
+```
+This graph is interesting. We can clearly see that habitat 1 has a difference to all of the other bars however 2 and 3 look about the same. Habitat 4 also looks different to 2 and 3. So I chose to run a Tukeys test (to see if there is any significant differences) and I got that between all habitats and 1 there is a significant difference and habitat 4 and 2 have a significant difference. The reason the ANOVA doesn't tell us this is because ANOVA only tells us if any value is significant. However, we can see that there are significants for many of the habitats. So now that we know one of the predictors is significant why don't we test the rest of them and see if there is anything?
+
+#### What variables are good predictors of height?
+This is the same as the last part. After making sure all of my data is fine and meets the crieria for this linear regression test, I performed the test using biomass and habitat as my predictos. The test worked well with all values being a significant predictor. The p-value for the entire model was < 2.2e-16 which means that we can reject the null for this experiment (that none of the predictors will fit the model, that height is independent).
+
+```{r warnings=FALSE, fig.show="hold", echo=FALSE, output=FALSE, fig.cap="The Big LM Analysis"}
+
+ggplot(palmetto, aes(x=biomass, y=sqrt(height), fill=as.factor(habitat)))+
+  geom_jitter(size=3, alpha=0.6, shape=21)+
+  geom_smooth(method="lm", alpha=0.6, size=0.5)+
+  ylab("Sqrt(Height)")+ 
+  xlab("Biomass")+
+  theme_bw()+
+  theme(text = element_text(size=18))
+
+```
+This graph also shows the expected vs predicted values for the graph. As you can see a lot of the data fits the graph. Now there is a lot of the model that is not explained by the graph, but we aren't creating anything to predict the model. Instead, we are trying to find out if there is a significant relationship between the predictors and the height. This graph does show that by covering a nice amount of data and the p-value from the Linear Regression further supports this idea. 
+
+## Discussion
+
+My analysis aimed to investigate the factors that impact the growth of palmetto trees, specifically focusing on the influence of habitat and biomass. The results suggest that both habitat and biomass have a significant effect on the height of the palmetto trees.
+
+In real-world terms, this means that the environment in which a palmetto tree is located, as well as its biomass, play a crucial role in determining its height. This information can be useufl as we can use the biomass to measure how much decay there has been from the environmental effects and then see if the habitats with more or less biomass have more or less tree height. This information is useful as we can see if trees can keep growing and be healthy even after a disastrous event such as fires, or even if controlled fires can be benefitial for the environment by promoting tree growth. 
+
+However, there are limitations to our analysis. Firstly, the data only covers two dominant species of palmetto in south-central Florida, which may not be representative of the entire range of palmetto species and their geographical distribution. Additionally, the dataset only considers certain variables, such as height, length, width, green leaves, and biomass, limiting the scope of our analysis.
+
+Furthermore, the data only covers the habitat and the biomass influence and we are using that to make an influence on the height of the tree. There could be a relationship between the other factors, however many of them were removed due to redundancy and or possible correlation which can harm the assumptions we make.
+
+There may be potential sources of bias or dependence in our analysis. For instance, the dataset is focused on a specific region, which may not encompass the full range of environmental factors affecting palmetto growth. Additionally, the data collection method and the removal of certain variables in the cleaning process could introduce bias or influence the results.
+
+Given more time and data, we would choose to analyze additional factors that may impact palmetto growth, such as soil composition, water availability, and interactions with other plant species
+![Tree Meme](/users/Navneet/downloads/2zy4z8i0zuv31.png)
+
+
+## References
+
+Abrahamson, W.G. 2019. Survival, growth and biomass estimates of two dominant palmetto species of south-central Florida from 1981 - 2017, ongoing at 5-year intervals ver 1. Environmental Data Initiative.           https://doi.org/10.6073/pasta/f2f96ec76fbbd4b9db431c79a770c4d5 
+
+British Ecological Society - Besjournals.                         
+  https://besjournals.onlinelibrary.wiley.com/. 
+
+H. Wickham. ggplot2: Elegant Graphics for Data Analysis. Springer-Verlag     New York, 2016.
+
+Hothorn T, Bretz F, Westfall P (2008). “Simultaneous Inference in         General Parametric Models.” _Biometrical Journal_, *50*(3),
+  346-363.
+
+John Fox and Sanford Weisberg (2019). An {R} Companion to Applied         Regression, Third Edition. Thousand Oaks CA: Sage. URL:
+  https://socialsciences.mcmaster.ca/jfox/Books/Companion/  
+
+Revelle, W. (2022) psych: Procedures for Personality and Psychological    Research, Northwestern University, Evanston, Illinois, USA,
+  https://CRAN.R-project.org/package=psych Version = 2.2.9.
+  
+Sabal Palmetto (Walt, 
+  https://www.srs.fs.usda.gov/pubs/misc/ag_654/volume_2/sabal/palmetto.h   tm. 
+  
+Xie Y (2023). _bookdown: Authoring Books and Technical Documents with R     Markdown_. R package version 0.33,
+  <https://github.com/rstudio/bookdown>.
+
+
+## Appendix
+
+### Exploratory data analysis
+
+```{r}
+
+cor_matrix<-cor(palmetto)
+cor_matrix
+#highest correlation is between height, length, and width. That is why I will not be using them together
+
+#distributions
+par(mfrow=c(2,2))
+hist(palmetto$biomass, main="", xlab="Biomass") #not normal
+hist(palmetto$height, main="", xlab="Height") #mostly normal
+hist(palmetto$length, main="", xlab="Length") #mostly normal
+hist(palmetto$width, main="", xlab="Width") #mostly norma
+
+#normality check
+shapiro.test((palmetto$biomass)) #not normal
+shapiro.test((palmetto$height)) # not normal
+shapiro.test((palmetto$length)) #not normal
+shapiro.test((palmetto$width)) #not normal
+qqPlot(palmetto$biomass) #looks not normal
+qqPlot(palmetto$height) #looks normal
+qqPlot(palmetto$length) #looks normal
+qqPlot(palmetto$width) #looks not normal
+
+#since none of them are normal transform
+shapiro.test(log(palmetto$biomass)) #not normal
+shapiro.test(sqrt(palmetto$height)) #normal
+shapiro.test(sqrt(palmetto$length)) # normal
+shapiro.test(sqrt(palmetto$width)) # normal
+qqPlot(sqrt(palmetto$height)) # normal
+qqPlot(sqrt(palmetto$length)) # normal
+qqPlot(sqrt(palmetto$width)) # normal
+
+
+#numerics vs factor/categorical
+par(mfrow=c(2,2))
+boxplot(height ~ habitat, data=palmetto, xlab="species")
+boxplot(length ~ habitat, data=palmetto, xlab="species")
+boxplot(width ~ habitat, data=palmetto, xlab="species")
+par(mfrow=c(1,1))
+
+#all the numerica data is not normal by itself. After transformation it is normal
+#habitat will be a good categorical predictor
+#height length and weight are all correlated
+
+#I think i will run an anova on petal height ~ habitat for my "comparing means" test
+
+```
+
+
+### Statistical methods
+#### ANOVA
+```{r}
+
+#goal: one way anova of height by habitat
+
+#step 1: check assumptions of linear regression:
+#independence, normal residuals, equal variances
+
+palmettoaov <- aov(sqrt(height) ~ as.factor(habitat), data=palmetto)
+par(mfrow=c(2,2))
+plot(palmettoaov) #looks normal with a constant variance
+par(mfrow=c(1,1))
+res1 <- palmettoaov$residuals
+shapiro.test(res1) #normal
+qqPlot(res1) #normal
+hist(res1) #looks normal
+
+#step 2: run the anova
+summary(palmettoaov) #habitat highly significant, as expected from EDA. The p value is really low (*10^-14) this means that habitat is a significant predictor and we can move on with the experiment
+
+#step 3: check the difference in means
+
+TukeyHSD(palmettoaov) #this gives an error when its just habitat which is why I am doing as.factor(habitat) to coerce r into thinking it is a factor
+# what this also says is that the difference between 2-1, 3-1, and 4-1 are significant. As well as 4-2. So we know 1 significantly differs from the rest of the data. 4 may also differ but not that much. 
+
+#step 4: plot it out
+
+ggplot(palmetto, aes(x = habitat, y = sqrt(height), fill = factor(habitat))) + 
+geom_bar(stat = "identity", position = "dodge")  +
+labs(x = "Habitat", y = "Mean sqrt height",fill = "Habitat", title = "Mean sqrt height by Habitat") +
+theme_minimal()
+
+```
+
+#### Linear regression
+```{r}
+
+#check assumptions of linear regression:
+#independence, normal residuals, equal variances
+
+full_model <- lm(sqrt(height)~as.factor(habitat)+biomass, data=palmetto) 
+par(mfrow=c(2,2))
+plot(full_model) #looks mostly normal with relatively constant variance
+par(mfrow=c(1,1))
+res2 <- full_model$residuals
+qqPlot(res2) #normal
+shapiro.test(res2) #normal
+
+#step 2: run the lm
+
+summary(full_model) #Everything is a predictor. 
+
+#step 3: make a graph
+
+ggplot(palmetto, aes(x=biomass, y=sqrt(height), fill=as.factor(habitat)))+
+  geom_jitter(size=3, alpha=0.6, shape=21)+
+  geom_smooth(method="lm", alpha=0.6, size=0.5)+
+  ylab("Sqrt(Height)")+ 
+  xlab("Habitat")+
+  theme_bw()+
+  theme(text = element_text(size=18))
+
+```
+
+
+### Reference
+```{r}
+citation('psych')
+citation('car')
+citation('multcomp')
+citation('ggplot2')
+citation('bookdown')
+```
+
+
+
+
+
